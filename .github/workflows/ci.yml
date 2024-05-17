@@ -9,11 +9,11 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.build == 'macos' && 'macos' || 'ubuntu' }}-latest
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        build: [macos, windows, linux]
+        build: [windows, linux]
 
     steps:
       - uses: actions/checkout@v3
@@ -29,7 +29,7 @@ jobs:
 
       - name: Export build
         run: |
-          name="${{ fromJSON('{"windows": "Windows Desktop", "macos": "macOS", "linux": "Linux/X11"}')[matrix.build] }}"
+          name="${{ fromJSON('{"windows": "Windows Desktop", "linux": "Linux/X11"}')[matrix.build] }}"
           mkdir -p build
           godot --headless --export-debug "$name" build/drivechain_launcher_${{ matrix.build }} --verbose 2>&1 | tee build.log
 
@@ -91,9 +91,6 @@ jobs:
         run: |
           mv drivechain_launcher_linux drivechain-launcher-latest-x86_64-unknown-linux-gnu
           zip -r drivechain-launcher-latest-x86_64-unknown-linux-gnu.zip drivechain-launcher-latest-x86_64-unknown-linux-gnu/*
-
-          mv drivechain_launcher_macos drivechain-launcher-latest-x86_64-apple-darwin
-          zip -r drivechain-launcher-latest-x86_64-apple-darwin.zip drivechain-launcher-latest-x86_64-apple-darwin/*
 
           mv drivechain_launcher_windows drivechain-launcher-latest-x86_64-w64
           zip -r drivechain-launcher-latest-x86_64-w64.zip drivechain-launcher-latest-x86_64-w64/*
