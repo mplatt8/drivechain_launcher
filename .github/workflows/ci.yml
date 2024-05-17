@@ -25,20 +25,23 @@ jobs:
           include-templates: true
 
       - name: Verify Setup
-        run: |
-          godot --version
+        run: godot --version
 
       - name: Export build
         run: |
-          name="${{fromJSON('{"windows": "Windows Desktop", "macos": "macOS", "linux": "Linux/X11"}')[matrix.build] }}"
-          godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
+          name="${{ fromJSON('{"windows": "Windows Desktop", "macos": "macOS", "linux": "Linux/X11"}')[matrix.build] }}"
+          mkdir -p build
+          godot --headless --export-debug "$name" build/drivechain_launcher_${{ matrix.build }} --verbose 2>&1 | tee build.log
+
+      - name: List build directory
+        run: ls -R build
 
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
           name: drivechain_launcher_${{ matrix.build }}
           if-no-files-found: error
-          path: build/drivechain_launcher-*
+          path: build/drivechain_launcher_${{ matrix.build }}
 
   test_sidechains:
     runs-on: ubuntu-latest
@@ -73,8 +76,7 @@ jobs:
         docker build -t sidechain -f docker/sidechain/Dockerfile .
 
     - name: Run Tests
-      run: |
-        ./scripts/test_sidechain.sh
+      run: ./scripts/test_sidechain.sh
 
   upload-artifacts-to-releases-drivechain-info:
     name: Upload artifacts to releases.drivechain.info
