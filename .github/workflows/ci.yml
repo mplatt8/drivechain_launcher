@@ -18,6 +18,18 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Install Dependencies (Linux only)
+        if: matrix.build == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Clone Drivechain Repo and Build (Linux only)
+        if: matrix.build == 'linux'
+        run: |
+          git clone https://github.com/mplatt8/drivechain_launcher.git
+          cd drivechain_launcher
+          sudo ./configure
+          sudo make
+
       - uses: chickensoft-games/setup-godot@v1
         with:
           version: 4.2.1
@@ -61,22 +73,22 @@ jobs:
           - 12346:12346
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Set up Docker
-      uses: docker/setup-buildx-action@v2
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
 
-    - name: Build Drivechain Node Docker image
-      run: |
-        docker build -t drivechain-node -f docker/drivechain/Dockerfile .
+      - name: Build Drivechain Node Docker image
+        run: |
+          docker build -t drivechain-node -f docker/drivechain/Dockerfile .
 
-    - name: Build Sidechain Docker image
-      run: |
-        docker build -t sidechain -f docker/sidechain/Dockerfile .
+      - name: Build Sidechain Docker image
+        run: |
+          docker build -t sidechain -f docker/sidechain/Dockerfile .
 
-    - name: Run Tests
-      run: ./scripts/test_sidechain.sh
+      - name: Run Tests
+        run: ./scripts/test_sidechain.sh
 
   upload-artifacts-to-releases-drivechain-info:
     name: Upload artifacts to releases.drivechain.info
