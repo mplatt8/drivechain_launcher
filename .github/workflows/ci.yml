@@ -27,8 +27,13 @@ jobs:
         run: |
           git clone https://github.com/mplatt8/drivechain_launcher.git
           cd drivechain_launcher
-          sudo ./configure
-          sudo make
+          if [ -f ./configure ]; then
+            sudo ./configure
+            sudo make
+          else
+            echo "Configure script not found!"
+            exit 1
+          fi
 
       - uses: chickensoft-games/setup-godot@v1
         with:
