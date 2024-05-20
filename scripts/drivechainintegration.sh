@@ -94,7 +94,9 @@ function startdrivechain {
         --regtest &
     else
         ./mainchain/src/qt/drivechain-qt \
-        --regtest &
+        --regtest \
+        echo "drivechain started" &
+        
     fi
 
     sleep 15s
