@@ -47,7 +47,7 @@ jobs:
           GODOT_MACOS_NOTARIZATION_API_KEY: ./notarization_api_key.p8
           GODOT_MACOS_NOTARIZATION_API_UUID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }}
 
-      - name: Upload build
+      - name: Upload macOS build
         uses: actions/upload-artifact@v4
         with:
           name: drivechain_launcher_macos
@@ -88,28 +88,37 @@ jobs:
           name="${{fromJSON('{"windows": "Windows Desktop", "linux": "Linux/X11"}')[matrix.build] }}"
           godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
 
-      - name: Upload build
+      - name: Upload Windows/Linux build
         uses: actions/upload-artifact@v4
         with:
           name: drivechain_launcher_${{ matrix.build }}
           if-no-files-found: error
           path: build/drivechain_launcher-*
 
-  run-testing-scripts:
-    name: Test Launcher
+  test-windows-linux:
+    name: Test Windows and Linux Builds
     runs-on: ubuntu-latest
     needs: build-windows-linux
-
     steps:
-      - name: Download artifcats
+      - name: Download Windows/Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: drivechain_launcher_windows
+
+      - name: Download Windows/Linux artifacts
         uses: actions/download-artifact@v4
         with:
           name: drivechain_launcher_linux
 
-      - name: Download artifcats
-        uses: actions/download-artifact@v4
-        with:
-          name: drivechain_launcher_windows
+      - name: List Root Directory
+        run: |
+          echo "Listing root directory:"
+          ls -al
+
+      - name: List Scripts Directory
+        run: |
+          echo "Listing scripts directory:"
+          ls -al scripts
 
       - name: Make script executable
         run: chmod +x ./scripts/drivechainintegration.sh
@@ -117,42 +126,23 @@ jobs:
       - name: Run Tests
         run: ./scripts/drivechainintegration.sh
 
-          
-
-  upload-artifacts-to-releases-drivechain-info:
-    name: Upload artifacts to releases.drivechain.info
+  upload-artifacts-macos:
+    name: Upload macOS artifacts to releases.drivechain.info
     runs-on: ubuntu-latest
-    needs: [build-macos, build-windows-linux]
-    # avoid uploading on PRs!
+    needs: build-macos
     if: github.event_name == 'push' && github.repository_owner == 'LayerTwo-Labs'
     steps:
-      - name: Download artifacts
+      - name: Download macOS artifacts
         uses: actions/download-artifact@v4
         with:
           name: drivechain_launcher_macos
 
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: drivechain_launcher_windows
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: drivechain_launcher_linux
-
-      - name: Create zip files for releases.drivechain.info
+      - name: Create zip files for macOS
         run: |
-          mv drivechain_launcher_linux drivechain-launcher-latest-x86_64-unknown-linux-gnu
-          zip -r drivechain-launcher-latest-x86_64-unknown-linux-gnu.zip drivechain-launcher-latest-x86_64-unknown-linux-gnu/*
-
           mv drivechain_launcher_macos drivechain-launcher-latest-x86_64-apple-darwin
           zip -r drivechain-launcher-latest-x86_64-apple-darwin.zip drivechain-launcher-latest-x86_64-apple-darwin/*
 
-          mv drivechain_launcher_windows drivechain-launcher-latest-x86_64-w64
-          zip -r drivechain-launcher-latest-x86_64-w64.zip drivechain-launcher-latest-x86_64-w64/*
-
-      - name: Upload release assets to releases.drivechain.info
+      - name: Upload macOS release assets to releases.drivechain.info
         uses: cross-the-world/ssh-scp-ssh-pipelines@latest
         with:
           host: 45.33.96.47
@@ -160,4 +150,39 @@ jobs:
           pass: ${{ secrets.RELEASES_SERVER_PW }}
           port: 22
           scp: |
-            'drivechain-launcher-latest-*.zip' => '/var/www/html/'
+            'drivechain-launcher-latest-x86_64-apple-darwin.zip' => '/var/www/html/'
+
+  upload-artifacts-windows-linux:
+    name: Upload Windows/Linux artifacts to releases.drivechain.info
+    runs-on: ubuntu-latest
+    needs: [test-windows-linux]
+    if: github.event_name == 'push' && github.repository_owner == 'LayerTwo-Labs'
+    steps:
+      - name: Download Windows/Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: drivechain_launcher_windows
+
+      - name: Download Windows/Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: drivechain_launcher_linux
+
+      - name: Create zip files for Windows/Linux
+        run: |
+          mv drivechain_launcher_linux drivechain-launcher-latest-x86_64-unknown-linux-gnu
+          zip -r drivechain-launcher-latest-x86_64-unknown-linux-gnu.zip drivechain-launcher-latest-x86_64-unknown-linux-gnu/*
+
+          mv drivechain_launcher_windows drivechain-launcher-latest-x86_64-w64
+          zip -r drivechain-launcher-latest-x86_64-w64.zip drivechain-launcher-latest-x86_64-w64/*
+
+      - name: Upload Windows/Linux release assets to releases.drivechain.info
+        uses: cross-the-world/ssh-scp-ssh-pipelines@latest
+        with:
+          host: 45.33.96.47
+          user: root
+          pass: ${{ secrets.RELEASES_SERVER_PW }}
+          port: 22
+          scp: |
+            'drivechain-launcher-latest-x86_64-unknown-linux-gnu.zip' => '/var/www/html/'
+            'drivechain-launcher-latest-x86_64-w64.zip' => '/var/www/html/'
