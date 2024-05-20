@@ -9,11 +9,11 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.build == 'macos' && 'macos' || 'ubuntu' }}-latest
+    runs-on: ${{ matrix.os == 'macos' && 'macos' || 'ubuntu' }}-latest
     strategy:
       fail-fast: false
       matrix:
-        build: [macos, windows, linux]
+        os: [windows, linux, macos]
 
     steps:
       - uses: actions/checkout@v3
@@ -29,7 +29,7 @@ jobs:
           godot --version
 
       - name: Import certificate to Keychain
-        if: ${{ matrix.build == 'macos' }}
+        if: ${{ matrix.os == 'macos' }}
         run: |
           echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
           KEYCHAIN_PASSWORD=$(uuidgen)
@@ -42,27 +42,24 @@ jobs:
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
 
       - name: Setup notarization credentials
-        if: ${{ matrix.build == 'macos' }}
+        if: ${{ matrix.os == 'macos' }}
         run: |
           echo ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY }} | base64 --decode > notarization_api_key.p8
 
       - name: Export build
         run: |
-          name="${{fromJSON('{"windows": "Windows Desktop", "macos": "macOS", "linux": "Linux/X11"}')[matrix.build] }}"
+          name="${{fromJSON('{"windows": "Windows Desktop", "macos": "macOS", "linux": "Linux/X11"}')[matrix.os] }}"
           godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
 
         env:
-          GODOT_MACOS_NOTARIZATION_API_KEY_ID:
-            ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }}
+          GODOT_MACOS_NOTARIZATION_API_KEY_ID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }}
           GODOT_MACOS_NOTARIZATION_API_KEY: ./notarization_api_key.p8
-          GODOT_MACOS_NOTARIZATION_API_UUID:
-            ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }}
+          GODOT_MACOS_NOTARIZATION_API_UUID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }}
 
       - name: Wait for notarization to finish
-        if: ${{ matrix.build == 'macos' }}
+        if: ${{ matrix.os == 'macos' }}
         run: |
           request_id=$(grep 'Notarization request UUID' build.log | rev | cut -d ' ' -f 1 | rev | tr -d '"')
-
           xcrun notarytool wait $request_id \
             --issuer ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }} \
             --key-id ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }} \
@@ -71,7 +68,7 @@ jobs:
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: drivechain_launcher_${{ matrix.build }}
+          name: drivechain_launcher_${{ matrix.os }}
           if-no-files-found: error
           path: build/drivechain_launcher-*
 
@@ -85,7 +82,12 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
 
+      - name: Run sidechain tests
+        if: ${{ matrix.os != 'macos' }}
+        run: ./scripts/test_sidechain.sh
+
       - name: Run integration script
+        if: ${{ matrix.os != 'macos' }}
         run: ./scripts/drivechainintegration.sh
 
   upload-artifacts-to-releases-drivechain-info:
@@ -99,14 +101,20 @@ jobs:
 
       - name: Create zip files for releases.drivechain.info
         run: |
-          mv drivechain_launcher_linux drivechain-launcher-latest-x86_64-unknown-linux-gnu
-          zip -r drivechain-launcher-latest-x86_64-unknown-linux-gnu.zip drivechain-launcher-latest-x86_64-unknown-linux-gnu/*
+          if [ -d "drivechain_launcher_linux" ]; then
+            mv drivechain_launcher_linux drivechain-launcher-latest-x86_64-unknown-linux-gnu
+            zip -r drivechain-launcher-latest-x86_64-unknown-linux-gnu.zip drivechain-launcher-latest-x86_64-unknown-linux-gnu/*
+          fi
 
-          mv drivechain_launcher_macos drivechain-launcher-latest-x86_64-apple-darwin
-          zip -r drivechain-launcher-latest-x86_64-apple-darwin.zip drivechain-launcher-latest-x86_64-apple-darwin/*
+          if [ -d "drivechain_launcher_macos" ]; then
+            mv drivechain_launcher_macos drivechain-launcher-latest-x86_64-apple-darwin
+            zip -r drivechain-launcher-latest-x86_64-apple-darwin.zip drivechain-launcher-latest-x86_64-apple-darwin/*
+          fi
 
-          mv drivechain_launcher_windows drivechain-launcher-latest-x86_64-w64
-          zip -r drivechain-launcher-latest-x86_64-w64.zip drivechain-launcher-latest-x86_64-w64/*
+          if [ -d "drivechain_launcher_windows" ]; then
+            mv drivechain_launcher_windows drivechain-launcher-latest-x86_64-w64
+            zip -r drivechain-launcher-latest-x86_64-w64.zip drivechain-launcher-latest-x86_64-w64/*
+          fi
 
       - name: Upload release assets to releases.drivechain.info
         uses: cross-the-world/ssh-scp-ssh-pipelines@latest
