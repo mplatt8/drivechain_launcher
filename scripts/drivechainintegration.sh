@@ -75,6 +75,9 @@ echo -e "\e[31mWARNING: THIS WILL DELETE YOUR DRIVECHAIN & SIDECHAIN DATA!\e[0m"
 echo
 echo -e "\e[32mYou should probably run this in a VM\e[0m"
 echo
+
+startdrivechain
+
 read -p "Are you sure you want to run this? (yes/no): " WARNING_ANSWER
 if [ "$WARNING_ANSWER" != "yes" ]; then
     exit
