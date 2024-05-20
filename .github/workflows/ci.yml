@@ -73,7 +73,7 @@ jobs:
           path: build/drivechain_launcher-*
 
   test:
-    name: Run sidechain and integration tests
+    name: Run integration tests
     runs-on: ubuntu-latest
     needs: build
     steps:
