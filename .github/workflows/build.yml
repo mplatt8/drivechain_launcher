@@ -110,6 +110,9 @@ jobs:
         with:
           name: drivechain_launcher_linux
 
+      - name: Check out the repository
+        uses: actions/checkout@v3
+
       - name: List Root Directory
         run: |
           echo "Listing root directory:"
