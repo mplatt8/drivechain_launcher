@@ -1,4 +1,5 @@
-name: Build Launcher
+name: Build and Test Launcher
+
 on:
   pull_request:
   push:
@@ -74,6 +75,9 @@ jobs:
             --issuer ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }} \
             --key-id ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }} \
             --key ./notarization_api_key.p8
+
+      - name: Run sidechain tests
+        run: ./scripts/test_sidechain.sh
 
   upload-artifacts-to-releases-drivechain-info:
     name: Upload artifacts to releases.drivechain.info
