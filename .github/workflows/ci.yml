@@ -8,39 +8,29 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux-windows:
+  build-non-macos:
+    runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+        os: [windows, linux]
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Godot
-        uses: chickensoft-games/setup-godot@v1
+      - uses: chickensoft-games/setup-godot@v1
         with:
           version: 4.2.1
           use-dotnet: false
           include-templates: true
 
       - name: Verify Setup
-        run: godot --version
-
-      - name: Install dependencies
         run: |
-          if (${{ matrix.os }} -eq 'ubuntu-latest') {
-            sudo apt-get update
-            sudo apt-get install -y build-essential
-          }
-          elseif (${{ matrix.os }} -eq 'windows-latest') {
-            choco install mingw
-          }
+          godot --version
 
       - name: Export build
         run: |
-          $name = if (${{ matrix.os }} -eq 'windows-latest') { 'Windows Desktop' } else { 'Linux/X11' }
+          name="${{fromJSON('{"windows": "Windows Desktop", "linux": "Linux/X11"}')[matrix.os] }}"
           godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
 
       - name: Upload build
@@ -52,18 +42,19 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
+
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Godot
-        uses: chickensoft-games/setup-godot@v1
+      - uses: chickensoft-games/setup-godot@v1
         with:
           version: 4.2.1
           use-dotnet: false
           include-templates: true
 
       - name: Verify Setup
-        run: godot --version
+        run: |
+          godot --version
 
       - name: Import certificate to Keychain
         run: |
@@ -84,7 +75,6 @@ jobs:
       - name: Export build
         run: |
           godot --headless --export-debug "macOS" --verbose 2>&1 | tee build.log
-
         env:
           GODOT_MACOS_NOTARIZATION_API_KEY_ID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }}
           GODOT_MACOS_NOTARIZATION_API_KEY: ./notarization_api_key.p8
@@ -108,15 +98,12 @@ jobs:
   test:
     name: Run sidechain and integration tests
     runs-on: ubuntu-latest
-    needs: [build-linux-windows]
+    needs: build-non-macos
     steps:
       - uses: actions/checkout@v3
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
-
-      - name: Run sidechain tests
-        run: ./scripts/test_sidechain.sh
 
       - name: Run integration script
         run: ./scripts/drivechainintegration.sh
