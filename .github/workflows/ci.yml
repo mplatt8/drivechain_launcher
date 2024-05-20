@@ -1,4 +1,4 @@
-name: Build and Test Launcher
+name: Build Launcher
 
 on:
   pull_request:
@@ -9,11 +9,12 @@ on:
 
 jobs:
   build-non-macos:
+    # Runs on either Ubuntu or Windows, depending on the matrix value
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [windows, linux]
+        os: [ubuntu, windows]
 
     steps:
       - uses: actions/checkout@v3
@@ -30,7 +31,7 @@ jobs:
 
       - name: Export build
         run: |
-          name="${{fromJSON('{"windows": "Windows Desktop", "linux": "Linux/X11"}')[matrix.os] }}"
+          name="${{fromJSON('{"windows": "Windows Desktop", "ubuntu": "Linux/X11"}')[matrix.os] }}"
           godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
 
       - name: Upload build
@@ -75,18 +76,11 @@ jobs:
       - name: Export build
         run: |
           godot --headless --export-debug "macOS" --verbose 2>&1 | tee build.log
+
         env:
           GODOT_MACOS_NOTARIZATION_API_KEY_ID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }}
           GODOT_MACOS_NOTARIZATION_API_KEY: ./notarization_api_key.p8
           GODOT_MACOS_NOTARIZATION_API_UUID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }}
-
-      - name: Wait for notarization to finish
-        run: |
-          request_id=$(grep 'Notarization request UUID' build.log | rev | cut -d ' ' -f 1 | rev | tr -d '"')
-          xcrun notarytool wait $request_id \
-            --issuer ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }} \
-            --key-id ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }} \
-            --key ./notarization_api_key.p8
 
       - name: Upload build
         uses: actions/upload-artifact@v4
@@ -94,6 +88,15 @@ jobs:
           name: drivechain_launcher_macos
           if-no-files-found: error
           path: build/drivechain_launcher-*
+
+      - name: Wait for notarization to finish
+        run: |
+          request_id=$(grep 'Notarization request UUID' build.log | rev | cut -d ' ' -f 1 | rev | tr -d '"')
+
+          xcrun notarytool wait $request_id \
+            --issuer ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }} \
+            --key-id ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }} \
+            --key ./notarization_api_key.p8
 
   test:
     name: Run sidechain and integration tests
