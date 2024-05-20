@@ -112,10 +112,10 @@ jobs:
           name: drivechain_launcher_windows
 
       - name: Make script executable
-        run: sudo chmod +x ./scripts/drivechainCI.sh
+        run: chmod +x ./scripts/drivechainintegration.sh
 
       - name: Run Tests
-        run: ./scripts/drivechainCI.sh
+        run: ./scripts/drivechainintegration.sh
 
           
 
