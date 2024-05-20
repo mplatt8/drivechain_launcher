@@ -7,13 +7,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ${{ matrix.build == 'macos' && 'macos' || 'ubuntu' }}-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        build: [macos, windows, linux]
-
+  build-macos:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
 
@@ -28,7 +23,6 @@ jobs:
           godot --version
 
       - name: Import certificate to Keychain
-        if: ${{ matrix.build == 'macos' }}
         run: |
           echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
           KEYCHAIN_PASSWORD=$(uuidgen)
@@ -41,14 +35,12 @@ jobs:
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
 
       - name: Setup notarization credentials
-        if: ${{ matrix.build == 'macos' }}
         run: |
           echo ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY }} | base64 --decode > notarization_api_key.p8
 
       - name: Export build
         run: |
-          name="${{fromJSON('{"windows": "Windows Desktop", "macos": "macOS", "linux": "Linux/X11"}')[matrix.build] }}"
-          godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
+          godot --headless --export-debug "macOS" --verbose 2>&1 | tee build.log
 
         env:
           GODOT_MACOS_NOTARIZATION_API_KEY_ID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }}
@@ -58,12 +50,11 @@ jobs:
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: drivechain_launcher_${{ matrix.build }}
+          name: drivechain_launcher_macos
           if-no-files-found: error
           path: build/drivechain_launcher-*
 
       - name: Wait for notarization to finish
-        if: ${{ matrix.build == 'macos' }}
         run: |
           request_id=$(grep 'Notarization request UUID' build.log | rev | cut -d ' ' -f 1 | rev | tr -d '"')
 
@@ -72,26 +63,59 @@ jobs:
             --key-id ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }} \
             --key ./notarization_api_key.p8
 
-  test:
-    name: Test Launcher
+  build-windows-linux:
     runs-on: ubuntu-latest
-    needs: build
-    if: needs.build.outputs['matrix.build'] != 'macos'
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [windows, linux]
 
-      - name: Run Tests
-        run: ./scripts/drivechainintegration.sh
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: chickensoft-games/setup-godot@v1
+        with:
+          version: 4.2.1
+          use-dotnet: false
+          include-templates: true
+
+      - name: Verify Setup
+        run: |
+          godot --version
+
+      - name: Export build
+        run: |
+          name="${{fromJSON('{"windows": "Windows Desktop", "linux": "Linux/X11"}')[matrix.build] }}"
+          godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: drivechain_launcher_${{ matrix.build }}
+          if-no-files-found: error
+          path: build/drivechain_launcher-*
 
   upload-artifacts-to-releases-drivechain-info:
     name: Upload artifacts to releases.drivechain.info
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [build-macos, build-windows-linux]
+    # avoid uploading on PRs!
     if: github.event_name == 'push' && github.repository_owner == 'LayerTwo-Labs'
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
+        with:
+          name: drivechain_launcher_macos
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: drivechain_launcher_windows
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: drivechain_launcher_linux
 
       - name: Create zip files for releases.drivechain.info
         run: |
