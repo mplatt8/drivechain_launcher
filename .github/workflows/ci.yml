@@ -1,5 +1,4 @@
 name: Build Launcher
-
 on:
   pull_request:
   push:
@@ -8,12 +7,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-non-macos:
-    runs-on: ${{ matrix.os }}-latest
+  build:
+    runs-on: ${{ matrix.build == 'macos' && 'macos' || 'ubuntu' }}-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu, windows]
+        build: [macos, windows, linux]
 
     steps:
       - uses: actions/checkout@v3
@@ -25,41 +24,11 @@ jobs:
           include-templates: true
 
       - name: Verify Setup
-        run: godot --version
-
-      - name: Export build
         run: |
-          $name = if ($env:RUNNER_OS -eq 'Windows') { 'Windows Desktop' } else { 'Linux/X11' }
-          godot --headless --export-debug $name --verbose 2>&1 | tee build.log
-
-        shell: pwsh
-        env:
-          GODOT: ${{ secrets.GODOT }}
-          GODOT4: ${{ secrets.GODOT4 }}
-
-      - name: Upload build
-        uses: actions/upload-artifact@v4
-        with:
-          name: drivechain_launcher_${{ matrix.os }}
-          if-no-files-found: error
-          path: build/drivechain_launcher-*
-
-  build-macos:
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - uses: chickensoft-games/setup-godot@v1
-        with:
-          version: 4.2.1
-          use-dotnet: false
-          include-templates: true
-
-      - name: Verify Setup
-        run: godot --version
+          godot --version
 
       - name: Import certificate to Keychain
+        if: ${{ matrix.build == 'macos' }}
         run: |
           echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
           KEYCHAIN_PASSWORD=$(uuidgen)
@@ -72,50 +41,53 @@ jobs:
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
 
       - name: Setup notarization credentials
+        if: ${{ matrix.build == 'macos' }}
         run: |
           echo ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY }} | base64 --decode > notarization_api_key.p8
 
       - name: Export build
         run: |
-          godot --headless --export-debug "macOS" --verbose 2>&1 | tee build.log
+          name="${{fromJSON('{"windows": "Windows Desktop", "macos": "macOS", "linux": "Linux/X11"}')[matrix.build] }}"
+          godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
 
         env:
           GODOT_MACOS_NOTARIZATION_API_KEY_ID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }}
           GODOT_MACOS_NOTARIZATION_API_KEY: ./notarization_api_key.p8
           GODOT_MACOS_NOTARIZATION_API_UUID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }}
 
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: drivechain_launcher_${{ matrix.build }}
+          if-no-files-found: error
+          path: build/drivechain_launcher-*
+
       - name: Wait for notarization to finish
+        if: ${{ matrix.build == 'macos' }}
         run: |
           request_id=$(grep 'Notarization request UUID' build.log | rev | cut -d ' ' -f 1 | rev | tr -d '"')
+
           xcrun notarytool wait $request_id \
             --issuer ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }} \
             --key-id ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }} \
             --key ./notarization_api_key.p8
 
-      - name: Upload build
-        uses: actions/upload-artifact@v4
-        with:
-          name: drivechain_launcher_macos
-          if-no-files-found: error
-          path: build/drivechain_launcher-*
-
   test:
-    name: Run sidechain and integration tests
+    name: Test Launcher
     runs-on: ubuntu-latest
-    needs: build-non-macos
+    needs: build
+    if: needs.build.outputs['matrix.build'] != 'macos'
     steps:
-      - uses: actions/checkout@v3
-
-      - name: Download build artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
 
-      - name: Run integration script
+      - name: Run Tests
         run: ./scripts/drivechainintegration.sh
 
   upload-artifacts-to-releases-drivechain-info:
     name: Upload artifacts to releases.drivechain.info
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [build]
     if: github.event_name == 'push' && github.repository_owner == 'LayerTwo-Labs'
     steps:
       - name: Download artifacts
@@ -123,20 +95,14 @@ jobs:
 
       - name: Create zip files for releases.drivechain.info
         run: |
-          if [ -d "drivechain_launcher_linux" ]; then
-            mv drivechain_launcher_linux drivechain-launcher-latest-x86_64-unknown-linux-gnu
-            zip -r drivechain-launcher-latest-x86_64-unknown-linux-gnu.zip drivechain-launcher-latest-x86_64-unknown-linux-gnu/*
-          fi
+          mv drivechain_launcher_linux drivechain-launcher-latest-x86_64-unknown-linux-gnu
+          zip -r drivechain-launcher-latest-x86_64-unknown-linux-gnu.zip drivechain-launcher-latest-x86_64-unknown-linux-gnu/*
 
-          if [ -d "drivechain_launcher_macos" ]; then
-            mv drivechain_launcher_macos drivechain-launcher-latest-x86_64-apple-darwin
-            zip -r drivechain-launcher-latest-x86_64-apple-darwin.zip drivechain-launcher-latest-x86_64-apple-darwin/*
-          fi
+          mv drivechain_launcher_macos drivechain-launcher-latest-x86_64-apple-darwin
+          zip -r drivechain-launcher-latest-x86_64-apple-darwin.zip drivechain-launcher-latest-x86_64-apple-darwin/*
 
-          if [ -d "drivechain_launcher_windows" ]; then
-            mv drivechain_launcher_windows drivechain-launcher-latest-x86_64-w64
-            zip -r drivechain-launcher-latest-x86_64-w64.zip drivechain-launcher-latest-x86_64-w64/*
-          fi
+          mv drivechain_launcher_windows drivechain-launcher-latest-x86_64-w64
+          zip -r drivechain-launcher-latest-x86_64-w64.zip drivechain-launcher-latest-x86_64-w64/*
 
       - name: Upload release assets to releases.drivechain.info
         uses: cross-the-world/ssh-scp-ssh-pipelines@latest
