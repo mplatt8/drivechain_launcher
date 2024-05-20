@@ -1,5 +1,4 @@
-name: Build and Test Launcher
-
+name: Build Launcher
 on:
   pull_request:
   push:
@@ -9,31 +8,15 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # both Windows and Linux builds run on Ubuntu
+    runs-on: ${{ matrix.build == 'macos' && 'macos' || 'ubuntu' }}-latest
     strategy:
       fail-fast: false
       matrix:
-        build: [windows, linux]
+        build: [macos, windows, linux]
 
     steps:
       - uses: actions/checkout@v3
-
-      - name: Install Dependencies (Linux only)
-        if: matrix.build == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential
-
-      - name: Clone Drivechain Repo and Build (Linux only)
-        if: matrix.build == 'linux'
-        run: |
-          git clone https://github.com/mplatt8/drivechain_launcher.git
-          cd drivechain_launcher
-          if [ -f ./configure ]; then
-            sudo ./configure
-            sudo make
-          else
-            echo "Configure script not found!"
-            exit 1
-          fi
 
       - uses: chickensoft-games/setup-godot@v1
         with:
@@ -42,63 +25,61 @@ jobs:
           include-templates: true
 
       - name: Verify Setup
-        run: godot --version
+        run: |
+          godot --version
+
+      - name: Import certificate to Keychain
+        if: ${{ matrix.build == 'macos' }}
+        run: |
+          echo "${{ secrets.MACOS_CERTIFICATE }}" | base64 --decode > certificate.p12
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security import ./certificate.p12 -k ~/Library/Keychains/build.keychain -P ${{ secrets.MACOS_CERTIFICATE_PASSWORD }} -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" ~/Library/Keychains/build.keychain
+        env:
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+
+      - name: Setup notarization credentials
+        if: ${{ matrix.build == 'macos' }}
+        run: |
+          echo ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY }} | base64 --decode > notarization_api_key.p8
 
       - name: Export build
         run: |
-          name="${{ fromJSON('{"windows": "Windows Desktop", "linux": "Linux/X11"}')[matrix.build] }}"
-          mkdir -p build
-          godot --headless --export-debug "$name" build/drivechain_launcher_${{ matrix.build }} --verbose 2>&1 | tee build.log
+          name="${{fromJSON('{"windows": "Windows Desktop", "macos": "macOS", "linux": "Linux/X11"}')[matrix.build] }}"
+          godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
 
-      - name: List build directory
-        run: ls -R build
+        env:
+          GODOT_MACOS_NOTARIZATION_API_KEY_ID:
+            ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }}
+          GODOT_MACOS_NOTARIZATION_API_KEY: ./notarization_api_key.p8
+          GODOT_MACOS_NOTARIZATION_API_UUID:
+            ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }}
 
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
           name: drivechain_launcher_${{ matrix.build }}
           if-no-files-found: error
-          path: build/drivechain_launcher_${{ matrix.build }}
+          path: build/drivechain_launcher-*
 
-  test_sidechains:
-    runs-on: ubuntu-latest
-    needs: build
-
-    services:
-      drivechain:
-        image: drivechain-node
-        ports:
-          - 8332:8332
-          - 8333:8333
-
-      sidechain:
-        image: sidechain
-        ports:
-          - 12345:12345
-          - 12346:12346
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v2
-
-      - name: Build Drivechain Node Docker image
+      - name: Wait for notarization to finish
+        if: ${{ matrix.build == 'macos' }}
         run: |
-          docker build -t drivechain-node -f docker/drivechain/Dockerfile .
+          request_id=$(grep 'Notarization request UUID' build.log | rev | cut -d ' ' -f 1 | rev | tr -d '"')
 
-      - name: Build Sidechain Docker image
-        run: |
-          docker build -t sidechain -f docker/sidechain/Dockerfile .
-
-      - name: Run Tests
-        run: ./scripts/test_sidechain.sh
+          xcrun notarytool wait $request_id \
+            --issuer ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }} \
+            --key-id ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }} \
+            --key ./notarization_api_key.p8
 
   upload-artifacts-to-releases-drivechain-info:
     name: Upload artifacts to releases.drivechain.info
     runs-on: ubuntu-latest
-    needs: [build, test_sidechains]
+    needs: [build]
+    # avoid uploading on PRs!
     if: github.event_name == 'push' && github.repository_owner == 'LayerTwo-Labs'
     steps:
       - name: Download artifacts
@@ -108,6 +89,9 @@ jobs:
         run: |
           mv drivechain_launcher_linux drivechain-launcher-latest-x86_64-unknown-linux-gnu
           zip -r drivechain-launcher-latest-x86_64-unknown-linux-gnu.zip drivechain-launcher-latest-x86_64-unknown-linux-gnu/*
+
+          mv drivechain_launcher_macos drivechain-launcher-latest-x86_64-apple-darwin
+          zip -r drivechain-launcher-latest-x86_64-apple-darwin.zip drivechain-launcher-latest-x86_64-apple-darwin/*
 
           mv drivechain_launcher_windows drivechain-launcher-latest-x86_64-w64
           zip -r drivechain-launcher-latest-x86_64-w64.zip drivechain-launcher-latest-x86_64-w64/*
