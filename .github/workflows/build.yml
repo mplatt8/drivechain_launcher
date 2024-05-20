@@ -111,6 +111,9 @@ jobs:
         with:
           name: drivechain_launcher_windows
 
+      - name: Make script executable
+        run: chmod +x ./scripts/drivechainCI.sh
+
       - name: Run tests
         run: ./scripts/drivechainCI.sh
           
