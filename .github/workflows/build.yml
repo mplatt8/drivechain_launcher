@@ -113,16 +113,6 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v3
 
-      - name: List Root Directory
-        run: |
-          echo "Listing root directory:"
-          ls -al
-
-      - name: List Scripts Directory
-        run: |
-          echo "Listing scripts directory:"
-          ls -al scripts || echo "No scripts directory found"
-
       - name: Make script executable
         run: chmod +x ./scripts/drivechainintegration.sh || echo "Script not found, skipping chmod"
 
