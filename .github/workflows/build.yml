@@ -111,18 +111,8 @@ jobs:
         with:
           name: drivechain_launcher_windows
 
-      - name: List Root Directory
-        run: |
-          ls -al
-        # List the root directory to check if scripts directory is present
-
-      - name: List Scripts Directory
-        run: |
-          ls -al scripts
-        # List the scripts directory to verify the presence and permissions of drivechainCI.sh
-
       - name: Make script executable
-        run: chmod +x ./scripts/drivechainCI.sh
+        run: sudo chmod +x ./scripts/drivechainCI.sh
 
       - name: Run Tests
         run: ./scripts/drivechainCI.sh
