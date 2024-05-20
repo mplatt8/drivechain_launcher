@@ -112,7 +112,7 @@ jobs:
           name: drivechain_launcher_windows
 
       - name: Run tests
-        run: ./scripts/drivechainintegration.sh
+        run: ./scripts/drivechainCI.sh
           
 
   upload-artifacts-to-releases-drivechain-info:
