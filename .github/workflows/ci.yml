@@ -9,12 +9,11 @@ on:
 
 jobs:
   build-non-macos:
-    # Runs on either Ubuntu or Windows, depending on the matrix value
     runs-on: ${{ matrix.os }}-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [windows, ubuntu]
+        os: [ubuntu, windows]
 
     steps:
       - uses: actions/checkout@v3
@@ -26,13 +25,17 @@ jobs:
           include-templates: true
 
       - name: Verify Setup
-        run: |
-          godot --version
+        run: godot --version
 
       - name: Export build
         run: |
-          name="${{fromJSON('{"windows": "Windows Desktop", "ubuntu": "Linux/X11"}')[matrix.os] }}"
-          godot --headless --export-debug "$name" --verbose 2>&1 | tee build.log
+          $name = if ($env:RUNNER_OS -eq 'Windows') { 'Windows Desktop' } else { 'Linux/X11' }
+          godot --headless --export-debug $name --verbose 2>&1 | tee build.log
+
+        shell: pwsh
+        env:
+          GODOT: ${{ secrets.GODOT }}
+          GODOT4: ${{ secrets.GODOT4 }}
 
       - name: Upload build
         uses: actions/upload-artifact@v4
@@ -54,8 +57,7 @@ jobs:
           include-templates: true
 
       - name: Verify Setup
-        run: |
-          godot --version
+        run: godot --version
 
       - name: Import certificate to Keychain
         run: |
@@ -82,21 +84,20 @@ jobs:
           GODOT_MACOS_NOTARIZATION_API_KEY: ./notarization_api_key.p8
           GODOT_MACOS_NOTARIZATION_API_UUID: ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }}
 
+      - name: Wait for notarization to finish
+        run: |
+          request_id=$(grep 'Notarization request UUID' build.log | rev | cut -d ' ' -f 1 | rev | tr -d '"')
+          xcrun notarytool wait $request_id \
+            --issuer ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }} \
+            --key-id ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }} \
+            --key ./notarization_api_key.p8
+
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
           name: drivechain_launcher_macos
           if-no-files-found: error
           path: build/drivechain_launcher-*
-
-      - name: Wait for notarization to finish
-        run: |
-          request_id=$(grep 'Notarization request UUID' build.log | rev | cut -d ' ' -f 1 | rev | tr -d '"')
-
-          xcrun notarytool wait $request_id \
-            --issuer ${{ secrets.GODOT_MACOS_NOTARIZATION_API_UUID }} \
-            --key-id ${{ secrets.GODOT_MACOS_NOTARIZATION_API_KEY_ID }} \
-            --key ./notarization_api_key.p8
 
   test:
     name: Run sidechain and integration tests
